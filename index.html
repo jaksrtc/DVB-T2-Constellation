@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>กลุ่มดาวสัญญาณและ SNR (Constellation & SNR Simulator)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Sarabun & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Sarabun', sans-serif;
+        }
+        .font-mono-code {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        /* Oscilloscope / Constellation Grid Screen */
+        .tech-screen {
+            background-color: #030712;
+            background-image: 
+                linear-gradient(rgba(30, 41, 59, 0.45) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(30, 41, 59, 0.45) 1px, transparent 1px),
+                linear-gradient(rgba(51, 65, 85, 0.15) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(51, 65, 85, 0.15) 1px, transparent 1px);
+            background-size: 40px 40px, 40px 40px, 10px 10px, 10px 10px;
+        }
+        /* TV Scanline effect */
+        .scanlines {
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.4) 50%);
+            background-size: 100% 4px;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col antialiased selection:bg-cyan-500 selection:text-black">
+
+    <!-- Header -->
+    <header class="bg-slate-900/90 border-b border-slate-800 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 text-white font-bold text-lg font-mono-code">
+                    IQ
+                </div>
+                <div>
+                    <h1 class="text-base md:text-lg font-bold text-white tracking-wide">การจำลองกลุ่มดาวสัญญาณ & SNR (DVB-T2 Constellation)</h1>
+                    <p class="text-xs text-slate-400">การวิเคราะห์ผลกระทบของสัญญาณรบกวนต่อการถอดรหัสสัญญาณดิจิทัล</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 space-y-6">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <!-- Left: Constellation Diagram Canvas & Controls -->
+            <div class="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+                <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+                        <h3 class="font-bold text-white text-sm md:text-base">ระนาบแกน I-Q (In-Phase & Quadrature)</h3>
+                    </div>
+
+                    <!-- Modulation Selector -->
+                    <div class="flex items-center gap-1.5 text-xs font-mono-code bg-slate-950 p-1 rounded-lg border border-slate-800">
+                        <span class="text-slate-400 px-1">Modulation:</span>
+                        <button onclick="setModulation(16)" id="btn-mod-16" class="px-2.5 py-1 rounded text-slate-400 hover:text-white transition">16-QAM</button>
+                        <button onclick="setModulation(64)" id="btn-mod-64" class="px-2.5 py-1 rounded bg-cyan-600 text-white font-bold transition">64-QAM</button>
+                        <button onclick="setModulation(256)" id="btn-mod-256" class="px-2.5 py-1 rounded text-slate-400 hover:text-white transition">256-QAM</button>
+                    </div>
+                </div>
+
+                <!-- Canvas Screen -->
+                <div class="relative w-full aspect-square max-h-[460px] mx-auto rounded-xl overflow-hidden border-2 border-slate-700 tech-screen shadow-inner">
+                    <canvas id="qamCanvas" class="w-full h-full"></canvas>
+
+                    <!-- HUD Readouts -->
+                    <div class="absolute top-3 left-3 bg-slate-950/85 backdrop-blur border border-slate-800 rounded-lg px-3 py-1.5 text-xs font-mono-code space-y-0.5">
+                        <div class="text-slate-400">โหมด: <span id="qam-hud-mod" class="text-cyan-400 font-bold">64-QAM</span></div>
+                        <div class="text-slate-400">SNR: <span id="qam-hud-snr" class="text-yellow-400 font-bold">30.0 dB</span></div>
+                        <div class="text-slate-400">Bit Error (BER): <span id="qam-hud-ber" class="text-emerald-400 font-bold">0.00e+00</span></div>
+                    </div>
+
+                    <div class="absolute bottom-3 right-3 text-[11px] font-mono-code bg-slate-950/80 px-2 py-1 rounded border border-slate-800 text-slate-400">
+                        จำนวนจุดสุ่มจำลอง: 1,600 Symbols
+                    </div>
+                </div>
+
+                <!-- SNR Slider Controls & Presets -->
+                <div class="space-y-3 pt-2">
+                    <div class="flex justify-between items-center text-xs">
+                        <span class="font-semibold text-slate-300">อัตราส่วนสัญญาณต่อสัญญาณรบกวน (SNR):</span>
+                        <span id="slider-snr-value" class="font-mono-code text-cyan-400 font-bold text-sm">30.0 dB</span>
+                    </div>
+                    <input id="slider-snr" type="range" min="4" max="35" step="0.5" value="30" oninput="updateSNR(this.value)" class="w-full h-2.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500">
+                    <div class="flex justify-between text-[11px] font-mono-code text-slate-400">
+                        <span class="text-rose-400">4 dB (Cliff Effect จอดำ)</span>
+                        <span class="text-amber-400">11 dB (ขีดจำกัดมาตรฐาน)</span>
+                        <span class="text-emerald-400">35 dB (สัญญาณดีเยี่ยม)</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        <button onclick="setSNRPreset(30)" class="px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-500/40 transition flex items-center justify-center gap-1.5">
+                            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            <span>SNR &gt; 25 dB (สัญญาณปกติ/ดีเยี่ยม)</span>
+                        </button>
+                        <button onclick="setSNRPreset(8)" class="px-3 py-2 rounded-xl text-xs font-semibold bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-500/40 transition flex items-center justify-center gap-1.5">
+                            <svg class="w-4 h-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            <span>SNR &lt; 11 dB (สัญญาณวิกฤต/จอดำ)</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Virtual TV Output Simulation -->
+            <div class="lg:col-span-5 space-y-4">
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-3">
+                    <div class="flex items-center justify-between pb-2 border-b border-slate-800 text-xs">
+                        <span class="font-bold text-white flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded bg-emerald-400"></span>
+                            หน้าจอโทรทัศน์จำลอง (Virtual TV Screen)
+                        </span>
+                        <span id="tv-status-badge" class="px-2 py-0.5 rounded text-[10px] font-mono-code font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                            1080p FHD NORMAL
+                        </span>
+                    </div>
+
+                    <!-- TV Display Frame -->
+                    <div class="relative w-full aspect-video bg-black rounded-xl overflow-hidden border-4 border-slate-800 shadow-2xl flex items-center justify-center scanlines select-none">
+                        <canvas id="tvCanvas" class="w-full h-full object-cover"></canvas>
+
+                        <!-- Cliff Effect / No Signal Overlay -->
+                        <div id="tv-nosignal-overlay" class="absolute inset-0 bg-black/95 flex flex-col items-center justify-center text-center p-4 hidden">
+                            <div class="w-12 h-12 rounded-full bg-rose-500/20 text-rose-500 flex items-center justify-center mb-2 animate-bounce">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+                            </div>
+                            <h4 class="text-sm font-bold text-white font-mono-code">ไม่มีสัญญาณ (NO SIGNAL)</h4>
+                            <p class="text-xs text-rose-400 mt-1">สัญญาณรบกวนสูงเกินขีดจำกัด (Cliff Effect)</p>
+                            <p class="text-[10px] text-slate-500 mt-0.5 font-mono-code">BER &gt; 1.0e-2 (Uncorrectable Packets)</p>
+                        </div>
+                    </div>
+
+                    <!-- TV Hardware Audio Indicator -->
+                    <div class="p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs flex items-center justify-between">
+                        <span class="text-slate-400 flex items-center gap-1.5">
+                            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path></svg>
+                            สถานะเสียง (Audio Stream):
+                        </span>
+                        <span id="audio-status-text" class="font-bold text-emerald-400 font-mono-code">AAC 5.1 ปกติ (ไม่มีกระตุก)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-800 bg-slate-950 py-4 text-center text-xs text-slate-500">
+        เครื่องมือจำลองกลุ่มดาวสัญญาณดิจิทัลและอัตราส่วน SNR
+    </footer>
+
+    <script>
+        let currentModulation = 64;
+        let currentSNR = 30.0;
+        const qamCanvas = document.getElementById('qamCanvas');
+        const qamCtx = qamCanvas.getContext('2d');
+        const tvCanvas = document.getElementById('tvCanvas');
+        const tvCtx = tvCanvas.getContext('2d');
+
+        function resizeQamCanvas() {
+            const rect = qamCanvas.getBoundingClientRect();
+            qamCanvas.width = rect.width * window.devicePixelRatio;
+            qamCanvas.height = rect.height * window.devicePixelRatio;
+            qamCtx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        }
+
+        function setModulation(mod) {
+            currentModulation = mod;
+            ['16', '64', '256'].forEach(m => {
+                const b = document.getElementById(`btn-mod-${m}`);
+                if (parseInt(m) === mod) {
+                    b.className = "px-2.5 py-1 rounded bg-cyan-600 text-white font-bold transition";
+                } else {
+                    b.className = "px-2.5 py-1 rounded text-slate-400 hover:text-white transition";
+                }
+            });
+            document.getElementById('qam-hud-mod').innerText = `${mod}-QAM`;
+            renderConstellation();
+        }
+
+        function updateSNR(val) {
+            currentSNR = parseFloat(val);
+            document.getElementById('slider-snr-value').innerText = currentSNR.toFixed(1) + " dB";
+            document.getElementById('qam-hud-snr').innerText = currentSNR.toFixed(1) + " dB";
+            renderConstellation();
+            renderTVScreen();
+        }
+
+        function setSNRPreset(val) {
+            document.getElementById('slider-snr').value = val;
+            updateSNR(val);
+        }
+
+        function renderConstellation() {
+            const rect = qamCanvas.getBoundingClientRect();
+            const w = rect.width;
+            const h = rect.height;
+            const cx = w / 2;
+            const cy = h / 2;
+
+            qamCtx.clearRect(0, 0, w, h);
+
+            // Draw I-Q Axis Lines
+            qamCtx.strokeStyle = 'rgba(71, 85, 105, 0.8)';
+            qamCtx.lineWidth = 1.5;
+            qamCtx.beginPath();
+            qamCtx.moveTo(0, cy); qamCtx.lineTo(w, cy);
+            qamCtx.moveTo(cx, 0); qamCtx.lineTo(cx, h);
+            qamCtx.stroke();
+
+            // Axis Text Labels
+            qamCtx.fillStyle = '#64748b';
+            qamCtx.font = '10px monospace';
+            qamCtx.fillText('+I (In-Phase)', w - 85, cy - 8);
+            qamCtx.fillText('+Q (Quadrature)', cx + 8, 20);
+
+            // Calculate Grid Dimensions
+            const m = Math.round(Math.sqrt(currentModulation));
+            const spacing = (w * 0.72) / (m - 1);
+            const startOffset = -((m - 1) * spacing) / 2;
+
+            // Base Symbol Constellation Coordinates
+            const symbols = [];
+            for (let i = 0; i < m; i++) {
+                for (let q = 0; q < m; q++) {
+                    symbols.push({
+                        x: cx + startOffset + i * spacing,
+                        y: cy + startOffset + q * spacing
+                    });
+                }
+            }
+
+            // Draw Reference Crosshair Dots
+            qamCtx.fillStyle = 'rgba(14, 165, 233, 0.4)';
+            symbols.forEach(s => {
+                qamCtx.beginPath();
+                qamCtx.arc(s.x, s.y, 2, 0, Math.PI * 2);
+                qamCtx.fill();
+            });
+
+            // Calculate Noise Standard Deviation from SNR (dB)
+            const snrLinear = Math.pow(10, currentSNR / 10.0);
+            const noiseSigma = (spacing * 0.85) / Math.sqrt(snrLinear * 2.0);
+
+            // Generate Gaussian Scatter Points
+            const totalCloudPoints = 1600;
+            qamCtx.fillStyle = currentSNR > 20 ? 'rgba(56, 189, 248, 0.75)' : (currentSNR >= 11 ? 'rgba(250, 204, 21, 0.75)' : 'rgba(244, 63, 94, 0.75)');
+
+            for (let k = 0; k < totalCloudPoints; k++) {
+                const center = symbols[Math.floor(Math.random() * symbols.length)];
+                const u1 = Math.max(1e-6, Math.random());
+                const u2 = Math.random();
+                const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+                const z1 = Math.sqrt(-2.0 * Math.log(u1)) * Math.sin(2.0 * Math.PI * u2);
+
+                const px = center.x + z0 * noiseSigma;
+                const py = center.y + z1 * noiseSigma;
+
+                qamCtx.beginPath();
+                qamCtx.arc(px, py, 1.5, 0, Math.PI * 2);
+                qamCtx.fill();
+            }
+
+            // Theoretical Bit Error Rate (BER) approximation
+            let ber = 0.5 * Math.exp(-0.25 * snrLinear / (currentModulation / 4));
+            if (currentSNR > 25) ber = 0;
+            document.getElementById('qam-hud-ber').innerText = ber > 0 ? ber.toExponential(2) : "0.00e+00";
+        }
+
+        function renderTVScreen() {
+            const rect = tvCanvas.getBoundingClientRect();
+            tvCanvas.width = rect.width;
+            tvCanvas.height = rect.height;
+            const w = tvCanvas.width;
+            const h = tvCanvas.height;
+
+            const overlay = document.getElementById('tv-nosignal-overlay');
+            const badge = document.getElementById('tv-status-badge');
+            const audioText = document.getElementById('audio-status-text');
+
+            // CASE 1: Cliff Effect (SNR < 11 dB)
+            if (currentSNR < 11) {
+                overlay.classList.remove('hidden');
+                badge.className = "px-2 py-0.5 rounded text-[10px] font-mono-code font-bold bg-rose-500/20 text-rose-400 border border-rose-500/40";
+                badge.innerText = "CLIFF EFFECT - NO SIGNAL";
+                audioText.className = "font-bold text-rose-500 font-mono-code";
+                audioText.innerText = "เงียบสนิท (Audio Mute จากสัญญาณหลุด)";
+                return;
+            }
+
+            overlay.classList.add('hidden');
+
+            // TV Screen Rendering
+            const gradSky = tvCtx.createLinearGradient(0, 0, 0, h);
+            gradSky.addColorStop(0, '#0284c7');
+            gradSky.addColorStop(0.6, '#38bdf8');
+            gradSky.addColorStop(1, '#67e8f9');
+            tvCtx.fillStyle = gradSky;
+            tvCtx.fillRect(0, 0, w, h);
+
+            // Sun & Clouds
+            tvCtx.fillStyle = '#fde047';
+            tvCtx.beginPath();
+            tvCtx.arc(w * 0.8, h * 0.28, 24, 0, Math.PI * 2);
+            tvCtx.fill();
+
+            // Mountains
+            tvCtx.fillStyle = '#0f766e';
+            tvCtx.beginPath();
+            tvCtx.moveTo(0, h);
+            tvCtx.lineTo(w * 0.3, h * 0.45);
+            tvCtx.lineTo(w * 0.65, h);
+            tvCtx.fill();
+
+            tvCtx.fillStyle = '#115e59';
+            tvCtx.beginPath();
+            tvCtx.moveTo(w * 0.4, h);
+            tvCtx.lineTo(w * 0.75, h * 0.55);
+            tvCtx.lineTo(w, h);
+            tvCtx.fill();
+
+            // Broadcast Banner
+            tvCtx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+            tvCtx.fillRect(15, 12, 130, 26);
+            tvCtx.fillStyle = '#ffffff';
+            tvCtx.font = 'bold 10px sans-serif';
+            tvCtx.fillText('🔴 DVB-T2 CH26 HD', 25, 29);
+
+            tvCtx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+            tvCtx.fillRect(0, h - 30, w, 30);
+            tvCtx.fillStyle = '#38bdf8';
+            tvCtx.font = '10px sans-serif';
+            tvCtx.fillText('ข่าวเช้าดิจิทัลทีวี • สัญญาณออกอากาศความคมชัดสูง Full HD 1080p', 15, h - 11);
+
+            // CASE 2: Pixelation / Macroblocking (11 dB <= SNR <= 20 dB)
+            if (currentSNR <= 20) {
+                badge.className = "px-2 py-0.5 rounded text-[10px] font-mono-code font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40";
+                badge.innerText = "MOSAIC PIXELATION";
+                audioText.className = "font-bold text-amber-400 font-mono-code";
+                audioText.innerText = "กระตุก ขาดหายเป็นช่วงๆ (Audio Dropouts)";
+
+                const blockSize = 24;
+                const numGlitchBlocks = Math.round((21 - currentSNR) * 6);
+                for (let b = 0; b < numGlitchBlocks; b++) {
+                    const gx = Math.floor(Math.random() * (w / blockSize)) * blockSize;
+                    const gy = Math.floor(Math.random() * (h / blockSize)) * blockSize;
+                    tvCtx.fillStyle = Math.random() > 0.5 ? '#1e293b' : (Math.random() > 0.5 ? '#065f46' : '#991b1b');
+                    tvCtx.fillRect(gx, gy, blockSize, blockSize);
+                }
+            } else {
+                // CASE 3: Normal Excellent Signal (SNR > 20 dB)
+                badge.className = "px-2 py-0.5 rounded text-[10px] font-mono-code font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+                badge.innerText = "1080p FHD NORMAL";
+                audioText.className = "font-bold text-emerald-400 font-mono-code";
+                audioText.innerText = "AAC 5.1 ปกติ (ไม่มีกระตุก)";
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            resizeQamCanvas();
+            renderConstellation();
+            renderTVScreen();
+        });
+
+        window.addEventListener('resize', () => {
+            resizeQamCanvas();
+            renderConstellation();
+            renderTVScreen();
+        });
+    </script>
+</body>
+</html>
